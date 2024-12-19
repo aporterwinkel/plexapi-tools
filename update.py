@@ -36,8 +36,14 @@ logging.basicConfig(
 )
 
 def map_path(plex_path: pathlib.Path) -> pathlib.Path:
-    original = str(plex_path)
-    return pathlib.Path(original.replace(r"\data\media", r"F:\BackedUp\Plex"))
+    SOURCE = os.getenv("LIBRARY_PATH_SOURCE", None)
+    TARGET = os.getenv("LIBRARY_PATH_TARGET", None)
+
+    mapped_path = str(plex_path)
+    if (SOURCE is not None) and (TARGET is not None):
+        mapped_path = mapped_path.replace(SOURCE, TARGET).replace("\\", "/")
+
+    return pathlib.Path(mapped_path)
 
 def extract_tag(file, tag_options: List[str]):
     for tag in tag_options:
@@ -71,9 +77,18 @@ def extract_genres(file):
     if isinstance(result, str):
         result = [result]
     
-    result = [g.lower() for g in result]
+    final_results = set()
+
+    for r in result:
+        r = r.lower()
+
+        if ";" in r:
+            for genre in r.split(";"):
+                final_results.add(genre.strip())
+        else:
+            final_results.add(r)
     
-    return result
+    return list(final_results)
 
 def extract_year(file):
     result = extract_tag(file, ["year", "YEAR", "DATE"])
@@ -256,7 +271,7 @@ class Run:
         # add new genres
         for g in incoming_genres:
             if g.lower() not in [entity_genre.lower() for entity_genre in existing_genres]:
-                logging.debug(f"Adding genre {g} to {entity}")
+                logging.info(f"Adding genre {g} to {entity}")
                 self.actions += 1
                 adds.append(g)
         
@@ -267,7 +282,7 @@ class Run:
             entity.addGenre(adds)
         
         if removes:
-            entity.addGenre(removes)
+            entity.removeGenre(removes)
     
     def write_genres_to_album(self, album, incoming: List[str]):
         self.write_genres_to_entity(album, incoming)
@@ -460,6 +475,7 @@ def main():
 
     album_count = 0
     for album in plex.library.section(os.getenv("PLEX_LIBRARY")).albums():
+        album.reload()
         album_count += 1
         album_genres = [g.tag for g in album.genres]
         is_loose = "Loose" in album_genres
